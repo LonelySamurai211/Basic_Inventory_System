@@ -48,13 +48,12 @@ class EmptyPlaceholder extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               message,
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.black54,
+              ),
               textAlign: TextAlign.center,
             ),
-            if (action != null) ...[
-              const SizedBox(height: 24),
-              action!,
-            ],
+            if (action != null) ...[const SizedBox(height: 24), action!],
           ],
         ),
       ),

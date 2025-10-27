@@ -24,10 +24,7 @@ class SettingsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Branding',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text('Branding', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 12),
                   Text(
                     'Upload logo, set accent colors, and update company information.',
@@ -50,10 +47,7 @@ class SettingsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Security',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text('Security', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 12),
                   Text(
                     'Configure backup frequency, session policies, and access control.',

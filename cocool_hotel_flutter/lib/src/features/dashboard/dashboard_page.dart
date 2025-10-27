@@ -10,7 +10,7 @@ class DashboardPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-  final stats = [
+    final stats = [
       _DashboardStat(
         label: 'Total Stock Value',
         value: '₱ 845,200',
@@ -73,23 +73,18 @@ class DashboardPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Good day, team',
-            style: theme.textTheme.headlineLarge,
-          ),
+          Text('Good day, team', style: theme.textTheme.headlineLarge),
           const SizedBox(height: 8),
           Text(
             'Monitor hotel supplies, approvals, and movements at a glance.',
-            style:
-                theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
           ),
           const SizedBox(height: 32),
           _buildStatsGrid(stats),
           const SizedBox(height: 40),
           SectionHeader(
             title: 'Quick Actions',
-            subtitle:
-                'Streamline daily routines with ready-to-run workflows.',
+            subtitle: 'Streamline daily routines with ready-to-run workflows.',
             trailing: OutlinedButton.icon(
               onPressed: () {},
               icon: const Icon(Icons.add),
@@ -120,10 +115,10 @@ class DashboardPage extends StatelessWidget {
         final crossAxisCount = constraints.maxWidth > 1200
             ? 4
             : constraints.maxWidth > 900
-                ? 3
-                : constraints.maxWidth > 600
-                    ? 2
-                    : 1;
+            ? 3
+            : constraints.maxWidth > 600
+            ? 2
+            : 1;
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -155,9 +150,7 @@ class DashboardPage extends StatelessWidget {
       spacing: 20,
       runSpacing: 20,
       children: shortcuts
-          .map(
-            (shortcut) => _ShortcutCard(shortcut: shortcut),
-          )
+          .map((shortcut) => _ShortcutCard(shortcut: shortcut))
           .toList(),
     );
   }
@@ -212,10 +205,7 @@ class DashboardPage extends StatelessWidget {
                   children: [
                     Expanded(
                       flex: 2,
-                      child: Text(
-                        row.po,
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      child: Text(row.po, style: theme.textTheme.bodyMedium),
                     ),
                     Expanded(
                       flex: 2,
@@ -224,10 +214,7 @@ class DashboardPage extends StatelessWidget {
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: _StatusBadge(text: row.status),
-                    ),
+                    Expanded(flex: 2, child: _StatusBadge(text: row.status)),
                     Expanded(
                       child: Align(
                         alignment: Alignment.centerRight,
@@ -276,9 +263,7 @@ class _ShortcutCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: shortcut.color.withValues(alpha: 0.15),
-        ),
+        border: Border.all(color: shortcut.color.withValues(alpha: 0.15)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x0F0B6E4F),
@@ -300,15 +285,9 @@ class _ShortcutCard extends StatelessWidget {
             child: Icon(shortcut.icon, color: shortcut.color),
           ),
           const SizedBox(height: 16),
-          Text(
-            shortcut.label,
-            style: theme.textTheme.titleMedium,
-          ),
+          Text(shortcut.label, style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          TextButton(
-            onPressed: () {},
-            child: const Text('Open'),
-          ),
+          TextButton(onPressed: () {}, child: const Text('Open')),
         ],
       ),
     );
@@ -330,10 +309,7 @@ class _StatusBadge extends StatelessWidget {
           color: AppColors.mint,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.labelLarge,
-        ),
+        child: Text(text, style: Theme.of(context).textTheme.labelLarge),
       ),
     );
   }

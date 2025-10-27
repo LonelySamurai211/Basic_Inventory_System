@@ -15,7 +15,8 @@ class NotificationsPage extends StatelessWidget {
         children: [
           const SectionHeader(
             title: 'Alerts & Notifications',
-            subtitle: 'Stay ahead of low-stock, expiries, and workflow updates.',
+            subtitle:
+                'Stay ahead of low-stock, expiries, and workflow updates.',
           ),
           const SizedBox(height: 24),
           EmptyPlaceholder(

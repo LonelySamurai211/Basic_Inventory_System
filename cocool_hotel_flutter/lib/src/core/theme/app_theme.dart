@@ -27,9 +27,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.all(0),
       ),
       textTheme: const TextTheme(
@@ -48,10 +46,7 @@ class AppTheme {
           fontSize: 16,
           color: AppColors.graphite,
         ),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          color: AppColors.graphite,
-        ),
+        bodyMedium: TextStyle(fontSize: 14, color: AppColors.graphite),
         labelLarge: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,

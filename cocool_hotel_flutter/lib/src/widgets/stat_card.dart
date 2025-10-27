@@ -31,27 +31,25 @@ class StatCard extends StatelessWidget {
           children: [
             Icon(icon, color: AppColors.forest, size: 28),
             const SizedBox(height: 16),
-            Text(
-              value,
-              style: theme.textTheme.headlineSmall,
-            ),
+            Text(value, style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
               label,
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.black54,
+              ),
             ),
             if (caption != null) ...[
               const SizedBox(height: 8),
-              Text(
-                caption!,
-                style: theme.textTheme.bodyMedium,
-              ),
+              Text(caption!, style: theme.textTheme.bodyMedium),
             ],
             if (trendLabel != null) ...[
               const SizedBox(height: 12),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: (trendPositive ? AppColors.mint : AppColors.warning)
                       .withValues(alpha: 0.2),
@@ -65,7 +63,9 @@ class StatCard extends StatelessWidget {
                           ? Icons.arrow_outward_rounded
                           : Icons.arrow_downward_rounded,
                       size: 16,
-                      color: trendPositive ? AppColors.forest : AppColors.warning,
+                      color: trendPositive
+                          ? AppColors.forest
+                          : AppColors.warning,
                     ),
                     const SizedBox(width: 6),
                     Flexible(

@@ -21,8 +21,7 @@ class SuppliersPage extends StatelessWidget {
           const SizedBox(height: 24),
           EmptyPlaceholder(
             title: 'Add your first supplier',
-            message:
-                'Keep delivery performance and contacts close at hand.',
+            message: 'Keep delivery performance and contacts close at hand.',
             icon: Icons.storefront_outlined,
             action: ElevatedButton.icon(
               onPressed: () {},

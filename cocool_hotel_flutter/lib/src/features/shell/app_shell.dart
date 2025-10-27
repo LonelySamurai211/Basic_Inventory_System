@@ -77,10 +77,7 @@ class _AppShellState extends State<AppShell> {
           appBar: AppBar(
             title: Text(_destinations[_selectedIndex].label),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: () {},
-              ),
+              IconButton(icon: const Icon(Icons.search), onPressed: () {}),
               const SizedBox(width: 4),
               CircleAvatar(
                 backgroundColor: AppColors.mint,
@@ -139,10 +136,7 @@ class _AppShellState extends State<AppShell> {
               padding: EdgeInsets.all(16),
               child: Text(
                 'Navigation',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 18,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
               ),
             ),
             const Divider(),
@@ -153,10 +147,10 @@ class _AppShellState extends State<AppShell> {
                   final destination = _destinations[index];
                   final isSelected = index == _selectedIndex;
                   return ListTile(
-                    leading: Icon(destination.icon,
-                        color: isSelected
-                            ? AppColors.forest
-                            : AppColors.graphite),
+                    leading: Icon(
+                      destination.icon,
+                      color: isSelected ? AppColors.forest : AppColors.graphite,
+                    ),
                     title: Text(destination.label),
                     selected: isSelected,
                     onTap: () {
