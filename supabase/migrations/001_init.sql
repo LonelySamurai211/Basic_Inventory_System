@@ -5,21 +5,6 @@
 -- Enable required extensions
 create extension if not exists pgcrypto;
 
--- ---------- Types ----------
-create type user_role as enum ('admin', 'dept_head', 'staff');
-
--- ---------- Auth/profile ----------
--- Profiles table mirrors auth.users (supabase auth) and stores application role and metadata
-create table if not exists profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  display_name text,
-  role user_role not null default 'staff',
-  department text,
-  created_at timestamptz default now()
-);
-
-create index if not exists idx_profiles_role on profiles(role);
-
 -- ---------- Suppliers ----------
 create table if not exists suppliers (
   id uuid primary key default gen_random_uuid(),
@@ -172,112 +157,6 @@ create trigger trg_after_update_items_low_stock
   after update of stock_qty, reorder_level on items
   for each row execute function fn_check_low_stock();
 
--- ---------- Row Level Security (RLS) ----------
--- Enable RLS on tables and create example policies.
-
--- Profiles: allow users to read and update their own profile; admins can manage all
-alter table profiles enable row level security;
-
-create policy "profiles_select_authenticated"
-  on profiles
-  for select
-  using (auth.role() is not null);
-
-create policy "profiles_self_update"
-  on profiles
-  for update
-  using (id = auth.uid())
-  with check (id = auth.uid());
-
-create policy "profiles_admin_manage"
-  on profiles
-  for all
-  using (exists (select 1 from profiles p2 where p2.id = auth.uid() and p2.role = 'admin'))
-  with check (exists (select 1 from profiles p2 where p2.id = auth.uid() and p2.role = 'admin'));
-
--- Items: allow authenticated users to select; only admins can insert/update/delete items
-alter table items enable row level security;
-
-create policy "items_select_auth"
-  on items
-  for select
-  using (auth.role() is not null);
-
-create policy "items_admin_full"
-  on items
-  for all
-  using (exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin'))
-  with check (exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin'));
-
--- Transactions: allow insert by authenticated users; allow select for users in same department or admin
-alter table transactions enable row level security;
-
-create policy "transactions_insert_authenticated"
-  on transactions
-  for insert
-  with check (auth.role() is not null);
-
-create policy "transactions_select_profiles"
-  on transactions
-  for select
-  using (exists (select 1 from profiles p where p.id = auth.uid()));
-
--- Purchase Orders: creators can read/write their POs; dept_head and admin can manage
-alter table purchase_orders enable row level security;
-
-create policy "po_insert_authenticated"
-  on purchase_orders
-  for insert
-  with check (auth.role() is not null);
-
-create policy "po_select_creator_or_admin"
-  on purchase_orders
-  for select
-  using (
-    requested_by = auth.uid()
-    or exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('dept_head','admin'))
-  );
-
-create policy "po_update_admin_or_creator"
-  on purchase_orders
-  for update
-  using (
-    requested_by = auth.uid()
-    or exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('dept_head','admin'))
-  )
-  with check (
-    requested_by = auth.uid()
-    or exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('dept_head','admin'))
-  );
-
--- Notifications: allow select by authenticated users; admins can view all
-alter table notifications enable row level security;
-
-create policy "notifications_select_auth"
-  on notifications
-  for select
-  using (auth.role() is not null);
-
-create policy "notifications_insert_internal"
-  on notifications
-  for insert
-  using (auth.role() is not null)
-  with check (auth.role() is not null);
-
--- Audit logs: only admins can read; inserts allowed by db functions
-alter table audit_logs enable row level security;
-
-create policy "audit_admin_select"
-  on audit_logs
-  for select
-  using (exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin'));
-
-create policy "audit_insert_internal"
-  on audit_logs
-  for insert
-  using (auth.role() is not null)
-  with check (auth.role() is not null);
-
 -- ---------- Seed data (example) ----------
 -- NOTE: For real deployments, use environment-specific seed routines or migrations tools.
 insert into suppliers (id, name, contact, address)
@@ -288,8 +167,5 @@ insert into items (id, name, category, unit, supplier_id, stock_qty, reorder_lev
 select gen_random_uuid(), 'Bath Towel', 'Linen', 'pcs', s.id, 120, 30
 from suppliers s
 limit 1;
-
--- Create a sample admin profile if matching auth user exists (replace with actual user uuid in production)
--- Example: INSERT INTO profiles (id, display_name, role) VALUES ('00000000-0000-0000-0000-000000000000', 'Local Admin', 'admin');
 
 -- End of migration

@@ -1,0 +1,1 @@
+-- Deprecated migration placeholder after removing authentication tables.
