@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../widgets/empty_placeholder.dart';
 import '../../widgets/section_header.dart';
+import '../notifications/notifications_service.dart';
+import 'supplier_validators.dart';
 import 'suppliers_provider.dart';
 
 class SuppliersPage extends ConsumerStatefulWidget {
@@ -86,7 +88,7 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
                             _showEditDialog(supplier);
                           },
                           onDelete: () {
-                            _deleteSupplier(supplier['id'] as String);
+                            _deleteSupplier(supplier);
                           },
                         ),
                       ),
@@ -99,13 +101,19 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
     );
   }
 
-  Future<void> _deleteSupplier(String id) async {
+  Future<void> _deleteSupplier(Map<String, dynamic> supplier) async {
     final messenger = ScaffoldMessenger.of(context);
+    final id = supplier['id']?.toString();
+    if (id == null) return;
     final ok = await SuppliersRepository.deleteSupplier(id);
     if (!mounted) return;
 
     if (ok) {
       await refreshSuppliers(ref);
+      await NotificationsService.supplierRemoved(
+        ref: ref,
+        name: supplier['name']?.toString() ?? 'Supplier',
+      );
       messenger.showSnackBar(const SnackBar(content: Text('Supplier deleted')));
     } else {
       messenger.showSnackBar(
@@ -115,7 +123,10 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
   }
 
   void _showCreateDialog() {
+    final formKey = GlobalKey<FormState>();
     final nameCtl = TextEditingController();
+    final taxIdCtl = TextEditingController();
+    final phoneCtl = TextEditingController();
     final emailCtl = TextEditingController();
     final addrCtl = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
@@ -125,22 +136,60 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Create supplier'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtl,
-              decoration: const InputDecoration(labelText: 'Name'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                  inputFormatters: [SupplierInputFormatters.lettersOnly],
+                  validator: SupplierValidators.name,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: taxIdCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Tax Identification Number',
+                    hintText: 'Example: 123-456-789-000',
+                  ),
+                  inputFormatters: [SupplierInputFormatters.taxId],
+                  validator: SupplierValidators.taxId,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact number',
+                    helperText: '11-digit mobile or 7-digit telephone',
+                  ),
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [SupplierInputFormatters.digitsOnly],
+                  validator: SupplierValidators.contactNumber,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: emailCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact email address',
+                    helperText: 'Only gmail.com or yahoo.com domains',
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: SupplierValidators.email,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: addrCtl,
+                  decoration: const InputDecoration(labelText: 'Address'),
+                  minLines: 2,
+                  maxLines: 3,
+                  validator: SupplierValidators.address,
+                ),
+              ],
             ),
-            TextField(
-              controller: emailCtl,
-              decoration: const InputDecoration(labelText: 'Contact email'),
-            ),
-            TextField(
-              controller: addrCtl,
-              decoration: const InputDecoration(labelText: 'Address'),
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -149,14 +198,14 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final name = nameCtl.text.trim();
-              if (name.isEmpty) return;
-              final contact = {'email': emailCtl.text.trim()};
+              if (!formKey.currentState!.validate()) return;
               final ok = await createSupplierAndRefresh(
                 ref,
-                name: name,
+                name: nameCtl.text.trim(),
+                taxId: taxIdCtl.text.trim(),
+                contactNumber: phoneCtl.text.trim(),
+                contactEmail: emailCtl.text.trim().toLowerCase(),
                 address: addrCtl.text.trim(),
-                contact: contact,
               );
               if (!mounted) return;
 
@@ -179,11 +228,24 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
   }
 
   void _showEditDialog(Map<String, dynamic> supplier) {
+    final formKey = GlobalKey<FormState>();
     final nameCtl = TextEditingController(
       text: supplier['name']?.toString() ?? '',
     );
+    final taxIdCtl = TextEditingController(
+      text: supplier['tax_id']?.toString() ??
+          supplier['contact']?['taxId']?.toString() ??
+          '',
+    );
+    final phoneCtl = TextEditingController(
+      text: supplier['contact_number']?.toString() ??
+          supplier['contact']?['phone']?.toString() ??
+          '',
+    );
     final emailCtl = TextEditingController(
-      text: supplier['contact']?['email']?.toString() ?? '',
+      text: supplier['contact_email']?.toString() ??
+          supplier['contact']?['email']?.toString() ??
+          '',
     );
     final addrCtl = TextEditingController(
       text: supplier['address']?.toString() ?? '',
@@ -195,22 +257,59 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Edit supplier'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtl,
-              decoration: const InputDecoration(labelText: 'Name'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                  inputFormatters: [SupplierInputFormatters.lettersOnly],
+                  validator: SupplierValidators.name,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: taxIdCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Tax Identification Number',
+                  ),
+                  inputFormatters: [SupplierInputFormatters.taxId],
+                  validator: SupplierValidators.taxId,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact number',
+                    helperText: '11-digit mobile or 7-digit telephone',
+                  ),
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [SupplierInputFormatters.digitsOnly],
+                  validator: SupplierValidators.contactNumber,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: emailCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact email address',
+                    helperText: 'Only gmail.com or yahoo.com domains',
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: SupplierValidators.email,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: addrCtl,
+                  decoration: const InputDecoration(labelText: 'Address'),
+                  minLines: 2,
+                  maxLines: 3,
+                  validator: SupplierValidators.address,
+                ),
+              ],
             ),
-            TextField(
-              controller: emailCtl,
-              decoration: const InputDecoration(labelText: 'Contact email'),
-            ),
-            TextField(
-              controller: addrCtl,
-              decoration: const InputDecoration(labelText: 'Address'),
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -219,14 +318,14 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final name = nameCtl.text.trim();
-              if (name.isEmpty) return;
-              final contact = {'email': emailCtl.text.trim()};
+              if (!formKey.currentState!.validate()) return;
               final updated = await SuppliersRepository.updateSupplier(
                 id: supplier['id'] as String,
-                name: name,
+                name: nameCtl.text.trim(),
+                taxId: taxIdCtl.text.trim(),
+                contactNumber: phoneCtl.text.trim(),
+                contactEmail: emailCtl.text.trim().toLowerCase(),
                 address: addrCtl.text.trim(),
-                contact: contact,
               );
               if (!mounted) return;
 
@@ -265,11 +364,16 @@ class _SupplierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contact = supplier['contact'];
-    final contactEmail = contact is Map
-        ? contact['email']?.toString() ?? ''
-        : '';
-    final phone = contact is Map ? contact['phone']?.toString() ?? '' : '';
+    final legacyContact = supplier['contact'];
+    final taxId = supplier['tax_id']?.toString() ??
+      (legacyContact is Map ? legacyContact['taxId']?.toString() : null) ??
+      '';
+    final contactEmail = supplier['contact_email']?.toString() ??
+      (legacyContact is Map ? legacyContact['email']?.toString() : null) ??
+      '';
+    final phone = supplier['contact_number']?.toString() ??
+      (legacyContact is Map ? legacyContact['phone']?.toString() : null) ??
+      '';
     final address = supplier['address']?.toString() ?? '';
     final theme = Theme.of(context);
 
@@ -309,6 +413,11 @@ class _SupplierCard extends StatelessWidget {
               spacing: 12,
               runSpacing: 8,
               children: [
+                if (taxId.isNotEmpty)
+                  _SupplierInfoPill(
+                    icon: Icons.badge_outlined,
+                    label: 'TIN: $taxId',
+                  ),
                 if (contactEmail.isNotEmpty)
                   _SupplierInfoPill(
                     icon: Icons.mail_outline,
@@ -316,7 +425,7 @@ class _SupplierCard extends StatelessWidget {
                   ),
                 _SupplierInfoPill(
                   icon: Icons.phone_enabled_outlined,
-                  label: phone.isEmpty ? 'No phone' : phone,
+                  label: phone.isEmpty ? 'No contact number' : phone,
                 ),
                 _SupplierInfoPill(
                   icon: Icons.location_on_outlined,

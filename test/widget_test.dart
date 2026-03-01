@@ -14,8 +14,7 @@ void main() {
     await tester.pumpWidget(const CocoolHotelApp());
     await tester.pumpAndSettle();
 
-    // AuthGate will show the SignInPage when there is no session; verify the
-    // app root exists and shows the sign-in prompt text.
-    expect(find.text('CoCool Hotel — Sign in'), findsOneWidget);
+    // Verify the app loads the dashboard page
+    expect(find.text('Dashboard'), findsOneWidget);
   });
 }

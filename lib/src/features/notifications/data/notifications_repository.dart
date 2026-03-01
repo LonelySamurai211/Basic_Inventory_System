@@ -1,105 +1,52 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod/riverpod.dart' as riverpod;
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-class NotificationsNotifier
-    extends riverpod.Notifier<List<Map<String, dynamic>>> {
-  @override
-  List<Map<String, dynamic>> build() => [];
-
-  void setItems(List<Map<String, dynamic>> items) => state = items;
-
-  void upsert(Map<String, dynamic> item) {
-    final list = [...state];
-    final index = list.indexWhere((element) => element['id'] == item['id']);
-    if (index >= 0) {
-      list[index] = item;
-    } else {
-      list.insert(0, item);
-    }
-    list.sort((a, b) {
-      final aDate =
-          DateTime.tryParse(a['created_at']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate =
-          DateTime.tryParse(b['created_at']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      return bDate.compareTo(aDate);
-    });
-    state = list;
-  }
-}
-
-final notificationsListProvider =
-    NotifierProvider<NotificationsNotifier, List<Map<String, dynamic>>>(
-      NotificationsNotifier.new,
-    );
-
 class NotificationsRepository {
-  NotificationsRepository._();
+  const NotificationsRepository._();
 
   static final _client = Supabase.instance.client;
 
-  static Future<List<Map<String, dynamic>>> fetchNotifications({
-    String? recipientId,
-  }) async {
-    try {
-      final base = _client.from('notifications').select();
-      final filtered = recipientId != null
-          ? base.eq('recipient_id', recipientId)
-          : base;
-      final res = await filtered.order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(
-        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
-      );
-    } catch (_) {
-      return [];
-    }
+  /// Fetch all notifications from Supabase
+  static Future<List<Map<String, dynamic>>> fetchNotifications() async {
+    final res = await _client
+        .from('notifications')
+        .select()
+        .order('created_at', ascending: false);
+
+    return res.map<Map<String, dynamic>>((n) => n as Map<String, dynamic>).toList();
   }
 
-  static Future<Map<String, dynamic>?> createNotification({
-    required String title,
-    required String message,
-    String? category,
-    String? recipientId,
-  }) async {
-    try {
-      final insert = await _client
-          .from('notifications')
-          .insert({
-            'title': title,
-            'message': message,
-            'category': category,
-            'recipient_id': recipientId,
-          })
-          .select()
-          .maybeSingle();
-      if (insert == null) return null;
-      return Map<String, dynamic>.from(insert as Map);
-    } catch (_) {
-      return null;
-    }
+  /// Insert a single notification
+  static Future<Map<String, dynamic>?> insertNotification(
+      Map<String, dynamic> data) async {
+    final res = await _client
+        .from('notifications')
+        .insert(data)
+        .select()
+        .single();
+
+    return res;
   }
 
-  static Future<Map<String, dynamic>?> markAsRead(String id, bool value) async {
-    try {
-      final updated = await _client
-          .from('notifications')
-          .update({'is_read': value})
-          .eq('id', id)
-          .select()
-          .maybeSingle();
-      if (updated == null) return null;
-      return Map<String, dynamic>.from(updated as Map);
-    } catch (_) {
-      return null;
-    }
-  }
-}
+  /// Mark a notification as read
+  static Future<Map<String, dynamic>?> markAsRead(String id, bool isRead) async {
+    final res = await _client
+        .from('notifications')
+        .update({'is_read': isRead})
+        .eq('id', id)
+        .select()
+        .maybeSingle();
 
-Future<void> refreshNotifications(WidgetRef ref, {String? recipientId}) async {
-  final list = await NotificationsRepository.fetchNotifications(
-    recipientId: recipientId,
-  );
-  ref.read(notificationsListProvider.notifier).setItems(list);
+    return res;
+  }
+
+  /// Mark ALL notifications as read
+  static Future<bool> markAllAsRead() async {
+    await _client.from('notifications').update({'is_read': true}).eq('is_read', false);
+    return true;
+  }
+
+  /// Delete a single notification
+  static Future<bool> deleteNotification(String id) async {
+    await _client.from('notifications').delete().eq('id', id);
+    return true;
+  }
 }

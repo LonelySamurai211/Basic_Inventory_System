@@ -30,7 +30,10 @@ class ItemsRepository {
       final client = Supabase.instance.client;
       final res = await client
           .from('items')
-          .select('id,name,unit,stock_qty,reorder_level,supplier_id')
+          .select(
+            'id,name,unit,stock_qty,supplier_id,description,'
+            'barcode,food_section',
+          )
           .order('name');
 
       // Supabase typically returns a List on a successful select. We'll attempt
@@ -51,26 +54,42 @@ class ItemsRepository {
     required String name,
     String? unit,
     int stock = 0,
-    int reorder = 0,
     String? supplierId,
+    String? description,
+    String? barcode,
+    String? foodSection,
+    int? supplyLimit,
+    int? reorderLevel,
   }) async {
     try {
       final client = Supabase.instance.client;
-      final insert = await client.from('items').insert({
+      final payload = {
         'name': name,
         'unit': unit,
         'stock_qty': stock,
-        'reorder_level': reorder,
         'supplier_id': supplierId,
-      }).select();
+        'description': description,
+        'barcode': barcode,
+        'food_section': foodSection,
+      };
+      print('Inserting item with payload: $payload');
+      final insert = await client.from('items').insert(payload).select();
+      print('Insert result: $insert');
 
       try {
         final first = (insert as List).first as Map;
-        return Map<String, dynamic>.from(first);
-      } catch (_) {
+        final item = Map<String, dynamic>.from(first);
+        // Add local fields
+        if (supplyLimit != null) item['supply_limit'] = supplyLimit;
+        if (reorderLevel != null) item['reorder_level'] = reorderLevel;
+        return item;
+      } catch (e) {
+        print('Error extracting first item: $e');
         return null;
       }
-    } catch (_) {}
+    } catch (e) {
+      print('Error inserting item: $e');
+    }
     return null;
   }
 
@@ -79,8 +98,12 @@ class ItemsRepository {
     required String name,
     String? unit,
     int? stock,
-    int? reorder,
     String? supplierId,
+    String? description,
+    String? barcode,
+    String? foodSection,
+    int? supplyLimit,
+    int? reorderLevel,
   }) async {
     try {
       final client = Supabase.instance.client;
@@ -90,7 +113,9 @@ class ItemsRepository {
         'supplier_id': supplierId,
       };
       if (stock != null) payload['stock_qty'] = stock;
-      if (reorder != null) payload['reorder_level'] = reorder;
+      payload['description'] = description;
+      payload['barcode'] = barcode;
+      payload['food_section'] = foodSection;
       final upd = await client
           .from('items')
           .update(payload)
@@ -98,7 +123,11 @@ class ItemsRepository {
           .select();
       try {
         final first = (upd as List).first as Map;
-        return Map<String, dynamic>.from(first);
+        final item = Map<String, dynamic>.from(first);
+        // Add local fields
+        if (supplyLimit != null) item['supply_limit'] = supplyLimit;
+        if (reorderLevel != null) item['reorder_level'] = reorderLevel;
+        return item;
       } catch (_) {
         return null;
       }
@@ -118,8 +147,9 @@ class ItemsRepository {
 
 /// Utility to refresh the items provider
 Future<void> refreshItems(WidgetRef ref) async {
+  final notifier = ref.read(itemsListProvider.notifier);
   final list = await ItemsRepository.listItems();
-  ref.read(itemsListProvider.notifier).setItems(list);
+  notifier.setItems(list);
 }
 
 /// Utility to add an item and refresh provider
@@ -128,18 +158,27 @@ Future<bool> createItem(
   required String name,
   String? unit,
   int stock = 0,
-  int reorder = 0,
   String? supplierId,
+  String? description,
+  String? barcode,
+  String? foodSection,
+  int? supplyLimit,
+  int? reorderLevel,
 }) async {
+  final notifier = ref.read(itemsListProvider.notifier);
   final created = await ItemsRepository.addItem(
     name: name,
     unit: unit,
     stock: stock,
-    reorder: reorder,
     supplierId: supplierId,
+    description: description,
+    barcode: barcode,
+    foodSection: foodSection,
+    supplyLimit: supplyLimit,
+    reorderLevel: reorderLevel,
   );
   if (created != null) {
-    ref.read(itemsListProvider.notifier).addItem(created);
+    notifier.addItem(created);
     return true;
   }
   return false;
@@ -151,28 +190,38 @@ Future<bool> updateItemInProvider(
   required String name,
   String? unit,
   int? stock,
-  int? reorder,
   String? supplierId,
+  String? description,
+  String? barcode,
+  String? foodSection,
+  int? supplyLimit,
+  int? reorderLevel,
 }) async {
+  final notifier = ref.read(itemsListProvider.notifier);
   final updated = await ItemsRepository.updateItem(
     id: id,
     name: name,
     unit: unit,
     stock: stock,
-    reorder: reorder,
     supplierId: supplierId,
+    description: description,
+    barcode: barcode,
+    foodSection: foodSection,
+    supplyLimit: supplyLimit,
+    reorderLevel: reorderLevel,
   );
   if (updated != null) {
-    ref.read(itemsListProvider.notifier).updateItem(id, updated);
+    notifier.updateItem(id, updated);
     return true;
   }
   return false;
 }
 
 Future<bool> deleteItemFromProvider(WidgetRef ref, String id) async {
+  final notifier = ref.read(itemsListProvider.notifier);
   final ok = await ItemsRepository.deleteItem(id);
   if (ok) {
-    ref.read(itemsListProvider.notifier).removeItem(id);
+    notifier.removeItem(id);
     return true;
   }
   return false;

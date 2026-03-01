@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/riverpod.dart' as riverpod;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../notifications/notifications_service.dart';
+
 class SuppliersListNotifier extends riverpod.Notifier<List<Map<String, dynamic>>> {
   @override
   List<Map<String, dynamic>> build() => [];
@@ -23,7 +25,7 @@ class SuppliersRepository {
       final client = Supabase.instance.client;
       final res = await client
           .from('suppliers')
-          .select('id,name,contact,address')
+          .select('id,name,tax_id,contact_number,contact_email,address')
           .order('name');
       return List<Map<String, dynamic>>.from(
         (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
@@ -34,15 +36,19 @@ class SuppliersRepository {
 
   static Future<Map<String, dynamic>?> createSupplier({
     required String name,
-    String? address,
-    Map<String, dynamic>? contact,
+    required String taxId,
+    required String contactNumber,
+    required String contactEmail,
+    required String address,
   }) async {
     try {
       final client = Supabase.instance.client;
       final insert = await client.from('suppliers').insert({
-        'name': name,
-        'address': address,
-        'contact': contact,
+        'name': _normalize(name),
+        'tax_id': _normalize(taxId),
+        'contact_number': _normalize(contactNumber),
+        'contact_email': _normalize(contactEmail),
+        'address': _normalize(address),
       }).select();
       return Map<String, dynamic>.from((insert as List).first as Map);
     } catch (_) {}
@@ -52,17 +58,21 @@ class SuppliersRepository {
   static Future<Map<String, dynamic>?> updateSupplier({
     required String id,
     required String name,
-    String? address,
-    Map<String, dynamic>? contact,
+    required String taxId,
+    required String contactNumber,
+    required String contactEmail,
+    required String address,
   }) async {
     try {
       final client = Supabase.instance.client;
       final upd = await client
           .from('suppliers')
           .update({
-            'name': name,
-            'address': address,
-            'contact': contact,
+            'name': _normalize(name),
+            'tax_id': _normalize(taxId),
+            'contact_number': _normalize(contactNumber),
+            'contact_email': _normalize(contactEmail),
+            'address': _normalize(address),
           })
           .eq('id', id)
           .select();
@@ -82,24 +92,36 @@ class SuppliersRepository {
 }
 
 Future<void> refreshSuppliers(WidgetRef ref) async {
+  final notifier = ref.read(suppliersListProvider.notifier);
   final list = await SuppliersRepository.listSuppliers();
-  ref.read(suppliersListProvider.notifier).setSuppliers(list);
+  notifier.setSuppliers(list);
 }
 
 Future<bool> createSupplierAndRefresh(
   WidgetRef ref, {
   required String name,
-  String? address,
-  Map<String, dynamic>? contact,
+  required String taxId,
+  required String contactNumber,
+  required String contactEmail,
+  required String address,
 }) async {
+  final notifier = ref.read(suppliersListProvider.notifier);
   final created = await SuppliersRepository.createSupplier(
     name: name,
+    taxId: taxId,
+    contactNumber: contactNumber,
+    contactEmail: contactEmail,
     address: address,
-    contact: contact,
   );
   if (created != null) {
-    ref.read(suppliersListProvider.notifier).addSupplier(created);
+    notifier.addSupplier(created);
+    await NotificationsService.supplierAdded(
+      ref: ref,
+      name: created['name']?.toString() ?? name,
+    );
     return true;
   }
   return false;
 }
+
+String _normalize(String value) => value.trim();

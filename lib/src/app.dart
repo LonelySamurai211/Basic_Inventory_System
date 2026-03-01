@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-
 import 'core/theme/app_theme.dart';
-import 'features/auth/presentation/auth_gate.dart';
+import 'features/shell/app_shell.dart';
+
+
 
 class CocoolHotelApp extends StatelessWidget {
   const CocoolHotelApp({super.key});
@@ -12,7 +13,7 @@ class CocoolHotelApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'CoCool Hotel MIMS',
       theme: AppTheme.light,
-      home: const AuthGate(),
+      home: AppShell(),
     );
   }
 }

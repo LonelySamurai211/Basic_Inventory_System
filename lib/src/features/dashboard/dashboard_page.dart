@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../auth/domain/app_user.dart';
+import 'package:intl/intl.dart';
 import '../inventory/items_provider.dart';
-import '../notifications/data/notifications_repository.dart';
+import '../notifications/notifications_list_provider.dart';
+import '../suppliers/supplier_validators.dart';
 import '../suppliers/suppliers_provider.dart';
 import '../transactions/transactions_provider.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
-  const DashboardPage({super.key, this.user});
+  const DashboardPage({super.key, required this.onNavigateToTab});
 
-  final AppUser? user;
+  final void Function(int index) onNavigateToTab;
 
   @override
   ConsumerState<DashboardPage> createState() => _DashboardPageState();
@@ -24,188 +24,404 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     super.didChangeDependencies();
     if (_loaded) return;
     _loaded = true;
-    refreshItems(ref);
-    refreshTransactions(ref);
-    refreshSuppliers(ref);
-    refreshNotifications(ref, recipientId: widget.user?.id);
+    _refreshAll();
   }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      refreshItems(ref),
+      refreshTransactions(ref),
+      refreshSuppliers(ref),
+      refreshNotifications(ref),
+    ]);
+  }
+
+  void _navigateToInventory() {
+    widget.onNavigateToTab(1); // Inventory tab index
+  }
+
+  void _navigateToSuppliers() {
+    widget.onNavigateToTab(2); // Suppliers tab index
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final items = ref.watch(itemsListProvider);
     final suppliers = ref.watch(suppliersListProvider);
     final transactions = ref.watch(transactionsProvider);
-  final notifications = ref.watch(notificationsListProvider);
-  final filteredNotifications = widget.user == null
-    ? notifications
-    : notifications
-      .where((note) =>
-        note['recipient_id'] == null ||
-        note['recipient_id']?.toString() == widget.user!.id)
-      .toList();
+    final notifications = ref.watch(notificationsListProvider);
 
-    final lowStock = items.where((item) {
-      final stock = int.tryParse(item['stock_qty']?.toString() ?? '') ?? 0;
-      final reorder = int.tryParse(item['reorder_level']?.toString() ?? '') ?? 0;
-      return reorder > 0 && stock <= reorder;
-    }).toList();
+    final unreadNotifications =
+        notifications.where((note) => note['is_read'] != true).length;
 
-    final latestTransactions = transactions.take(5).toList();
-    final latestNotifications = filteredNotifications.take(5).toList();
+    final recentTransactions = transactions.take(5).toList(growable: false);
+    final latestNotifications = notifications.take(5).toList(growable: false);
+    final activityEntries = _buildActivityEntries(
+      notifications: notifications,
+      transactions: transactions,
+    ).take(8).toList(growable: false);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Hotel operations at a glance',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 24),
-          _SummaryGrid(
-            tiles: [
-              _SummaryTile(
-                label: 'Inventory items',
-                value: items.length.toString(),
-                icon: Icons.inventory_2_outlined,
-              ),
-              _SummaryTile(
-                label: 'Low stock alerts',
-                value: lowStock.length.toString(),
-                icon: Icons.warning_amber_outlined,
-                color: Colors.orange,
-              ),
-              _SummaryTile(
-                label: 'Supplier partners',
-                value: suppliers.length.toString(),
-                icon: Icons.storefront_outlined,
-              ),
-              _SummaryTile(
-                label: 'Transactions (30 days)',
-                value: _countRecentTransactions(transactions).toString(),
-                icon: Icons.swap_vert_circle_outlined,
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          _SectionCard(
-            title: 'Low stock watchlist',
-            emptyText: 'All stock levels look healthy right now.',
-            isEmpty: lowStock.isEmpty,
-            child: _LowStockList(items: lowStock),
-          ),
-          const SizedBox(height: 24),
-          Row(
+    Widget statCard(String label, String value, IconData icon,
+        {Color? color}) {
+      final accent = color ?? theme.colorScheme.primary;
+      return Card(
+        elevation: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Icon(icon, size: 28, color: accent),
+              const SizedBox(width: 16),
               Expanded(
-                child: _SectionCard(
-                  title: 'Recent transactions',
-                  emptyText: 'Log a transaction to see it here.',
-                  isEmpty: latestTransactions.isEmpty,
-                  child: _RecentTransactionsList(items: latestTransactions),
-                ),
-              ),
-              const SizedBox(width: 24),
-              Expanded(
-                child: _SectionCard(
-                  title: 'Latest notifications',
-                  emptyText: 'No updates yet. You\'re all caught up!',
-                  isEmpty: latestNotifications.isEmpty,
-                  child: _RecentNotificationsList(items: latestNotifications),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(label, style: theme.textTheme.bodyMedium),
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    Widget wrapCards(List<Widget> children) {
+      const spacing = 16.0;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final targetWidth = constraints.maxWidth >= 1000 ? 320.0 : 260.0;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: children
+                .map(
+                  (card) => SizedBox(
+                    width: constraints.maxWidth <= targetWidth
+                        ? constraints.maxWidth
+                        : targetWidth,
+                    child: card,
+                  ),
+                )
+                .toList(),
+          );
+        },
+      );
+    }
+
+    List<Widget> buildTransactionTiles() {
+      return recentTransactions
+          .map((tx) {
+            final type = (tx['type']?.toString() ?? 'in').toLowerCase();
+            final isOut = type == 'out';
+            final itemName = tx['item']?['name']?.toString() ?? 'Unknown item';
+            final qty = tx['quantity']?.toString() ?? '0';
+            final timestamp =
+                _parseDate(tx['transaction_date']) ?? _parseDate(tx['occurred_at']);
+            final subtitle = timestamp != null
+                ? '${DateFormat('MMM d, yyyy').format(timestamp)} • Qty $qty'
+                : 'Qty $qty';
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                isOut ? Icons.upload_outlined : Icons.download_outlined,
+                color: isOut ? Colors.redAccent : Colors.green,
+              ),
+              title: Text(itemName),
+              subtitle: Text(subtitle),
+            );
+          })
+          .toList(growable: false);
+    }
+
+    List<Widget> buildNotificationTiles() {
+      return latestNotifications
+          .map(
+            (note) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                note['is_read'] == true
+                    ? Icons.notifications_none
+                    : Icons.notifications_active_outlined,
+                color: note['is_read'] == true ? null : Colors.orangeAccent,
+              ),
+              title: Text(
+                (note['title']?.toString().trim().isNotEmpty ?? false)
+                    ? note['title'].toString()
+                    : 'Notification',
+              ),
+              subtitle: Text(note['message']?.toString() ?? ''),
+            ),
+          )
+          .toList(growable: false);
+    }
+
+    List<Widget> buildActivityTiles() {
+      return activityEntries
+          .map(
+            (entry) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(entry.icon, color: entry.iconColor),
+              title: Text(entry.title),
+              subtitle: Text(entry.subtitle),
+              trailing: entry.timestamp == null
+                  ? null
+                  : Text(DateFormat('MMM d, HH:mm').format(entry.timestamp!)),
+            ),
+          )
+          .toList(growable: false);
+    }
+
+    final stats = [
+      statCard('Inventory items', items.length.toString(),
+          Icons.inventory_2_outlined),
+        statCard(
+        'Suppliers on file',
+        suppliers.length.toString(),
+        Icons.store_mall_directory_outlined,
+      ),
+      statCard(
+        'Unread notifications',
+        unreadNotifications.toString(),
+        Icons.notifications_active_outlined,
+        color: Colors.orange,
+      ),
+    ];
+
+    final quickActions = [
+      _QuickActionButton(
+        icon: Icons.inventory_2_outlined,
+        title: 'Check inventory item list',
+        description: 'Navigate to the Inventory page to manage items.',
+        onPressed: _navigateToInventory,
+      ),
+      _QuickActionButton(
+        icon: Icons.storefront_outlined,
+        title: 'Check supplier list',
+        description: 'Navigate to the Suppliers page to manage suppliers.',
+        onPressed: _navigateToSuppliers,
+      ),
+       _QuickActionButton(
+        icon: Icons.storefront_outlined,
+        title: 'Check reports list',
+        description: 'Navigate to the Reports page to view list or reports',
+        onPressed: _navigateToSuppliers,
+      ),
+    ];
+
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Overview',
+                  style: theme.textTheme.headlineSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _refreshAll,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          wrapCards(stats),
+          const SizedBox(height: 32),
+          Text('Quick actions', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          wrapCards(quickActions),
+          const SizedBox(height: 32),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Activity timeline',
+                      style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  if (activityEntries.isEmpty)
+                    Text(
+                      'No activity recorded yet. Actions from any tab will show up here.',
+                      style: theme.textTheme.bodyMedium,
+                    )
+                  else
+                    ...buildActivityTiles(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          wrapCards([
+            _RecentListCard(
+              title: 'Recent transactions',
+              emptyText: 'Log a transaction to populate this list.',
+              children: buildTransactionTiles(),
+            ),
+            _RecentListCard(
+              title: 'Notifications',
+              emptyText: 'No notifications yet.',
+              children: buildNotificationTiles(),
+            ),
+          ]),
         ],
       ),
     );
   }
 
-  int _countRecentTransactions(List<Map<String, dynamic>> transactions) {
-    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-    return transactions.where((tx) {
-      final dt = DateTime.tryParse(tx['occurred_at']?.toString() ?? '');
-      if (dt == null) return false;
-      return dt.isAfter(thirtyDaysAgo);
-    }).length;
+  List<_ActivityEntry> _buildActivityEntries({
+    required List<Map<String, dynamic>> notifications,
+    required List<Map<String, dynamic>> transactions,
+  }) {
+    final entries = <_ActivityEntry>[];
+
+    for (final note in notifications) {
+      final title = (note['title']?.toString().trim().isNotEmpty ?? false)
+          ? note['title'].toString()
+          : 'Notification';
+      final subtitle = note['message']?.toString().trim() ?? '';
+      final timestamp =
+          _parseDate(note['created_at']) ?? _parseDate(note['inserted_at']);
+      entries.add(
+        _ActivityEntry(
+          icon: note['is_read'] == true
+              ? Icons.notifications_none
+              : Icons.notifications_active_outlined,
+          iconColor: note['is_read'] == true ? null : Colors.orangeAccent,
+          title: title,
+          subtitle: subtitle,
+          timestamp: timestamp,
+        ),
+      );
+    }
+
+    for (final tx in transactions) {
+      final type = tx['type']?.toString() ?? 'in';
+      final isStockOut = type == 'out';
+      final itemName = tx['item']?['name']?.toString() ?? 'Unknown item';
+      final title = '${isStockOut ? 'Stock out' : 'Stock in'} • $itemName';
+      final qty = tx['quantity']?.toString() ?? '0';
+      final timestamp =
+          _parseDate(tx['transaction_date']) ?? _parseDate(tx['occurred_at']);
+      entries.add(
+        _ActivityEntry(
+          icon: isStockOut ? Icons.upload_outlined : Icons.download_outlined,
+          iconColor: isStockOut ? Colors.redAccent : Colors.green,
+          title: title,
+          subtitle: 'Qty $qty',
+          timestamp: timestamp,
+        ),
+      );
+    }
+
+    entries.sort((a, b) {
+      final aTs = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTs = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTs.compareTo(aTs);
+    });
+    return entries;
   }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value);
+    }
+    return null;
+  }
+
 }
 
-class _SummaryGrid extends StatelessWidget {
-  const _SummaryGrid({required this.tiles});
-
-  final List<_SummaryTile> tiles;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const tileWidth = 220.0;
-        const spacing = 16.0;
-        final columns = constraints.maxWidth <= tileWidth
-            ? 1
-            : (constraints.maxWidth / tileWidth).floor().clamp(1, 4);
-        final width = columns == 1
-            ? constraints.maxWidth
-            : (constraints.maxWidth - spacing * (columns - 1)) / columns;
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: tiles
-              .map(
-                (tile) => SizedBox(
-                  width: width,
-                  child: tile,
-                ),
-              )
-              .toList(),
-        );
-      },
-    );
-  }
-}
-
-class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({
-    required this.label,
-    required this.value,
+class _ActivityEntry {
+  const _ActivityEntry({
     required this.icon,
-    this.color,
+    required this.title,
+    required this.subtitle,
+    this.timestamp,
+    this.iconColor,
   });
 
-  final String label;
-  final String value;
   final IconData icon;
-  final Color? color;
+  final String title;
+  final String subtitle;
+  final DateTime? timestamp;
+  final Color? iconColor;
+}
+
+class _QuickActionButton extends StatelessWidget {
+  const _QuickActionButton({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onPressed,
+    this.enabled = true,
+    this.disabledReason,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool enabled;
+  final String? disabledReason;
+  final void Function() onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final accent = color ?? colorScheme.primary;
-
+    final baseColor = theme.colorScheme.surfaceContainerHighest;
+    final cardColor = baseColor.withValues(alpha: enabled ? 0.9 : 0.75);
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 0,
+      color: cardColor,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: accent, size: 28),
+            Icon(icon, size: 32, color: theme.colorScheme.primary),
             const SizedBox(height: 12),
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
             Text(
-              value,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: accent,
-                fontWeight: FontWeight.bold,
-              ),
+              description,
+              style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium,
+            if (!enabled && disabledReason != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                disabledReason!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: enabled ? () => onPressed() : null,
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open'),
+              ),
             ),
           ],
         ),
@@ -214,159 +430,160 @@ class _SummaryTile extends StatelessWidget {
   }
 }
 
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
+class _AddSupplierDialog extends ConsumerStatefulWidget {
+  const _AddSupplierDialog();
+
+  @override
+  ConsumerState<_AddSupplierDialog> createState() => _AddSupplierDialogState();
+}
+
+class _AddSupplierDialogState extends ConsumerState<_AddSupplierDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _taxIdController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _addressController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _taxIdController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    final success = await createSupplierAndRefresh(
+      ref,
+      name: _nameController.text.trim(),
+      taxId: _taxIdController.text.trim(),
+      contactNumber: _phoneController.text.trim(),
+      contactEmail: _emailController.text.trim().toLowerCase(),
+      address: _addressController.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (success) {
+      Navigator.of(context).pop(true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save the supplier.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add supplier'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Supplier name'),
+                inputFormatters: [SupplierInputFormatters.lettersOnly],
+                validator: SupplierValidators.name,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _taxIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Tax identification number',
+                  hintText: '111-222-333-444',
+                ),
+                inputFormatters: [SupplierInputFormatters.taxId],
+                validator: SupplierValidators.taxId,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Contact email address',
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: SupplierValidators.email,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Contact number',
+                  helperText: '11-digit mobile or 7-digit telephone',
+                ),
+                keyboardType: TextInputType.phone,
+                inputFormatters: [SupplierInputFormatters.digitsOnly],
+                validator: SupplierValidators.contactNumber,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _addressController,
+                decoration:
+                    const InputDecoration(labelText: 'Company address'),
+                minLines: 2,
+                maxLines: 3,
+                validator: SupplierValidators.address,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save supplier'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentListCard extends StatelessWidget {
+  const _RecentListCard({
     required this.title,
     required this.emptyText,
-    required this.child,
-    this.isEmpty = false,
+    required this.children,
   });
 
   final String title;
   final String emptyText;
-  final Widget child;
-  final bool isEmpty;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            child,
-            if (isEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                emptyText,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            if (children.isEmpty)
+              Text(emptyText, style: theme.textTheme.bodyMedium)
+            else
+              ...children,
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LowStockList extends StatelessWidget {
-  const _LowStockList({required this.items});
-
-  final List<Map<String, dynamic>> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptyPlaceholder();
-    }
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        for (final item in items)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(item['name']?.toString() ?? ''),
-            subtitle: Text(
-              'Qty: ${item['stock_qty']} • Reorder at ${item['reorder_level']}',
-              style: theme.textTheme.bodySmall,
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-          ),
-      ],
-    );
-  }
-}
-
-class _RecentTransactionsList extends StatelessWidget {
-  const _RecentTransactionsList({required this.items});
-
-  final List<Map<String, dynamic>> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptyPlaceholder();
-    }
-    return Column(
-      children: [
-        for (final tx in items)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              Icons.compare_arrows,
-              color: tx['type'] == 'out'
-                  ? Colors.redAccent
-                  : tx['type'] == 'in'
-                      ? Colors.green
-                      : Colors.blueGrey,
-            ),
-            title: Text(tx['item']?['name']?.toString() ?? 'Unknown item'),
-            subtitle: Text(
-              '${tx['type']} • Qty ${tx['quantity']} • ${tx['occurred_at']}',
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _RecentNotificationsList extends StatelessWidget {
-  const _RecentNotificationsList({required this.items});
-
-  final List<Map<String, dynamic>> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptyPlaceholder();
-    }
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        for (final note in items)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              note['is_read'] == true
-                  ? Icons.notifications_none
-                  : Icons.notifications_active_outlined,
-            ),
-            title: Text(note['title']?.toString() ?? ''),
-            subtitle: Text(
-              note['message']?.toString() ?? '',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _EmptyPlaceholder extends StatelessWidget {
-  const _EmptyPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.32),
-      ),
-      child: Center(
-        child: Text(
-          'No records yet',
-          style: Theme.of(context).textTheme.bodyMedium,
         ),
       ),
     );

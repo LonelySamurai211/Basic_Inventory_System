@@ -1,181 +1,216 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'notifications_list_provider.dart';
 
-import '../auth/domain/app_user.dart';
-import 'data/notifications_repository.dart';
-
-class NotificationsPage extends ConsumerStatefulWidget {
-  const NotificationsPage({required this.user, super.key});
-
-  final AppUser user;
+class NotificationsPage extends ConsumerWidget {
+  const NotificationsPage({super.key});
 
   @override
-  ConsumerState<NotificationsPage> createState() => _NotificationsPageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(notificationsListProvider);
 
-class _NotificationsPageState extends ConsumerState<NotificationsPage> {
-  bool _hydrated = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_hydrated) return;
-    _hydrated = true;
-    _refresh();
-  }
-
-  Future<void> _refresh() {
-    return refreshNotifications(ref, recipientId: widget.user.id);
-  }
-
-  Future<void> _toggleRead(Map<String, dynamic> notification) async {
-    final updated = await NotificationsRepository.markAsRead(
-      notification['id'].toString(),
-      notification['is_read'] != true,
-    );
-    if (updated == null) return;
-    ref.read(notificationsListProvider.notifier).upsert(updated);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final notifications = ref.watch(notificationsListProvider);
-    final filtered = notifications
-        .where((note) => note['recipient_id'] == null ||
-            note['recipient_id']?.toString() == widget.user.id)
-        .toList();
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
-        children: [
-          Text(
-            'Alerts & Notifications',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Stay ahead of low stock, expiries, and approvals in one glance.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          if (filtered.isEmpty)
-            _EmptyNotifications(onRefresh: _refresh)
-          else
-            ...filtered.map((item) => _NotificationTile(
-                  data: item,
-                  onToggleRead: () => _toggleRead(item),
-                )),
-        ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notifications'),
       ),
+
+      body: items.isEmpty
+          ? const Center(child: Text('No notifications yet.'))
+          : _buildGroupedList(context, items),
     );
   }
 }
 
-class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.data, required this.onToggleRead});
+// --------------------------------------------------------
+// GROUPED LIST BUILDER
+// --------------------------------------------------------
 
-  final Map<String, dynamic> data;
-  final VoidCallback onToggleRead;
+Widget _buildGroupedList(
+    BuildContext context, List<Map<String, dynamic>> items) {
+  final groups = {
+    'stock_in': <Map<String, dynamic>>[],
+    'stock_out': <Map<String, dynamic>>[],
+    'low_stock': <Map<String, dynamic>>[],
+    'new_item': <Map<String, dynamic>>[],
+    'others': <Map<String, dynamic>>[],
+  };
+
+  for (final n in items) {
+    final cat = n['category']?.toString() ?? '';
+    if (groups.containsKey(cat)) {
+      groups[cat]!.add(n);
+    } else {
+      groups['others']!.add(n);
+    }
+  }
+
+  return ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      _Section(
+        title: "Stock In Reports",
+        icon: Icons.arrow_downward,
+        items: groups['stock_in']!,
+      ),
+      const SizedBox(height: 20),
+
+      _Section(
+        title: "Stock Out Reports",
+        icon: Icons.arrow_upward,
+        items: groups['stock_out']!,
+      ),
+      const SizedBox(height: 20),
+
+      _Section(
+        title: "Low Stock Reports",
+        icon: Icons.warning_amber_outlined,
+        items: groups['low_stock']!,
+      ),
+      const SizedBox(height: 20),
+
+      _Section(
+        title: "New Item Reports",
+        icon: Icons.fiber_new,
+        items: groups['new_item']!,
+      ),
+      const SizedBox(height: 20),
+
+      if (groups['others']!.isNotEmpty)
+        _Section(
+          title: "Other Notifications",
+          icon: Icons.notifications,
+          items: groups['others']!,
+        ),
+    ],
+  );
+}
+
+// --------------------------------------------------------
+// SECTION (VIEW / HIDE)
+// --------------------------------------------------------
+
+class _Section extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final List<Map<String, dynamic>> items;
+
+  const _Section({
+    required this.title,
+    required this.icon,
+    required this.items,
+  });
+
+  @override
+  State<_Section> createState() => _SectionState();
+}
+
+class _SectionState extends State<_Section> {
+  bool expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final createdAt = DateTime.tryParse(data['created_at']?.toString() ?? '');
-    final isRead = data['is_read'] == true;
-    final title = data['title']?.toString() ?? 'Notification';
-    final message = data['message']?.toString() ?? '';
-    final category = data['category']?.toString();
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: ListTile(
-        leading: Icon(
-          isRead ? Icons.notifications_none : Icons.notifications_active,
-          color: isRead ? theme.colorScheme.outline : theme.colorScheme.primary,
-        ),
-        title: Text(title),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            if (message.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(message),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (category != null && category.isNotEmpty)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color:
-                          theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      category.toUpperCase(),
-                      style: theme.textTheme.labelSmall,
-                    ),
-                  ),
-                if (category != null && category.isNotEmpty)
-                  const SizedBox(width: 12),
-                Text(
-                  createdAt != null
-                      ? MaterialLocalizations.of(context).formatShortDate(createdAt)
-                      : 'Unknown date',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
+            Icon(widget.icon, color: Colors.green.shade700),
+            const SizedBox(width: 8),
+
+            Text(
+              widget.title,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+
+            const Spacer(),
+
+            TextButton(
+              onPressed: () => setState(() => expanded = !expanded),
+              child: Text(expanded ? "Hide" : "View"),
             ),
           ],
         ),
-        trailing: IconButton(
-          onPressed: onToggleRead,
-          icon: Icon(isRead ? Icons.mark_email_unread : Icons.mark_email_read),
-          tooltip: isRead ? 'Mark as unread' : 'Mark as read',
-        ),
-      ),
+
+        if (expanded) ...[
+          const SizedBox(height: 8),
+          for (final n in widget.items) _NotificationCard(n),
+        ],
+      ],
     );
   }
 }
 
-class _EmptyNotifications extends StatelessWidget {
-  const _EmptyNotifications({required this.onRefresh});
+// --------------------------------------------------------
+// EXPANDABLE NOTIFICATION CARD
+// --------------------------------------------------------
 
-  final Future<void> Function() onRefresh;
+class _NotificationCard extends StatefulWidget {
+  final Map<String, dynamic> data;
+
+  const _NotificationCard(this.data);
+
+  @override
+  State<_NotificationCard> createState() => _NotificationCardState();
+}
+
+class _NotificationCardState extends State<_NotificationCard> {
+  bool showDetails = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final data = widget.data;
+
+    final title = (data['title']?.toString().isNotEmpty ?? false)
+        ? data['title'].toString()
+        : "Notification";
+
+    final message = (data['message'] ??
+            data['description'] ??
+            "No details available")
+        .toString();
+
+    final createdAt = DateTime.tryParse(data['created_at']?.toString() ?? "");
+
     return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.celebration_outlined,
-                size: 48, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              'All clear for now',
-              style: theme.textTheme.titleMedium,
+            // Title row
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => showDetails = !showDetails),
+                  icon: Icon(
+                    showDetails
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Alerts will appear here and on the dashboard when triggered.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: onRefresh,
-              icon: const Icon(Icons.refresh_outlined),
-              label: const Text('Refresh now'),
-            ),
+
+            // Expanded details
+            if (showDetails) ...[
+              const SizedBox(height: 8),
+              Text(message),
+
+              const SizedBox(height: 8),
+
+              if (createdAt != null)
+                Text(
+                  "Date: ${createdAt.toLocal().toString().split('T').first}",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
           ],
         ),
       ),

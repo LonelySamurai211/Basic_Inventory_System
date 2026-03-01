@@ -1,0 +1,4 @@
+- [x] Add clearByCategory method to NotificationsListNotifier in notifications_list_provider.dart
+- [x] Modify ExpandableSection in reports_page.dart to accept a category parameter
+- [x] Add "Clear All" button to each ExpandableSection with confirmation dialog
+- [x] Update the instantiation of ExpandableSection to pass the category

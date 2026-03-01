@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../admin/admin_users_page.dart';
-import '../auth/domain/app_user.dart';
-import '../auth/presentation/auth_controller.dart';
+import '../inventory/inventory_transactions_page.dart';
 import '../dashboard/dashboard_page.dart';
-import '../inventory/inventory_page.dart';
 import '../notifications/data/notifications_repository.dart';
-import '../notifications/notifications_page.dart';
-import '../purchase_orders/purchase_orders_page.dart';
+import '../notifications/notifications_list_provider.dart';
+import '../notifications/widgets/notification_popup.dart';
 import '../reports/reports_page.dart';
 import '../settings/settings_page.dart';
 import '../suppliers/suppliers_page.dart';
-import '../transactions/transactions_page.dart';
 
 class AppShell extends ConsumerStatefulWidget {
-  const AppShell({required this.user, super.key});
-
-  final AppUser user;
+  const AppShell({super.key});
 
   @override
   ConsumerState<AppShell> createState() => _AppShellState();
@@ -25,71 +19,111 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
+  int _previousUnreadCount = 0;
+  Map<String, dynamic>? _currentPopupNotification;
+  bool _showPopup = false;
 
-  @override
-  void didUpdateWidget(covariant AppShell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final destinations = _buildDestinations(widget.user);
-    if (_selectedIndex >= destinations.length) {
-      setState(() => _selectedIndex = 0);
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {
-    final destinations = _buildDestinations(widget.user);
-    final unreadNotifications = ref
-        .watch(notificationsListProvider)
-        .where(
-          (note) =>
-              (note['recipient_id'] == null ||
-                  note['recipient_id']?.toString() == widget.user.id) &&
-              note['is_read'] != true,
-        )
-        .length;
+    final destinations = _buildDestinations();
 
-    final notificationsIndex = destinations.indexWhere(
-      (element) => element.id == 'notifications',
-    );
+    final clampedIndex = _selectedIndex.clamp(0, destinations.length - 1);
+    if (clampedIndex != _selectedIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _selectedIndex = clampedIndex);
+      });
+    }
+
+    final currentIndex = clampedIndex;
+    final notifications = ref.watch(notificationsListProvider);
+    final unreadNotifications =
+        notifications.where((n) => n['is_read'] != true).length;
+
+    // Initialize previous count on first build
+// Only update previous count after checking new notifications
+final isNewNotification = unreadNotifications > _previousUnreadCount;
+
+if (isNewNotification && !_showPopup) {
+  final newNotifications = notifications.where((n) => n['is_read'] != true).toList();
+  if (newNotifications.isNotEmpty) {
+    _currentPopupNotification = newNotifications.first;
+    _showPopup = true;
+  }
+}
+
+_previousUnreadCount = unreadNotifications;
+
+
+    // Check for new notifications
+    if (unreadNotifications > _previousUnreadCount && !_showPopup) {
+      final newNotifications = notifications.where((n) => n['is_read'] != true).toList();
+      if (newNotifications.isNotEmpty) {
+        _currentPopupNotification = newNotifications.first;
+        _showPopup = true;
+      }
+    }
+    _previousUnreadCount = unreadNotifications;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final isCompact = constraints.maxWidth < 1000;
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(destinations[_selectedIndex].label),
-            actions: [
-              if (notificationsIndex != -1)
-                IconButton(
-                  onPressed: () {
-                    setState(() => _selectedIndex = notificationsIndex);
-                  },
-                  icon: Badge.count(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    count: unreadNotifications,
-                    child: const Icon(Icons.notifications_outlined),
-                  ),
-                  tooltip: 'View notifications',
-                ),
-              _ProfileMenu(user: widget.user),
-            ],
-          ),
-          drawer: isCompact ? _buildDrawer(destinations) : null,
-          body: Row(
+
+        return SizedBox.expand(
+          child: Stack(
             children: [
-              if (!isCompact) _buildRail(destinations),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: KeyedSubtree(
-                    key: ValueKey(destinations[_selectedIndex].id),
-                    child: destinations[_selectedIndex].builder(
-                      ref,
-                      widget.user,
+              Scaffold(
+                appBar: AppBar(
+                  title: Text(destinations[currentIndex].label),
+                  actions: [
+                    IconButton(
+                      tooltip: 'View notifications',
+                      onPressed: () => _openNotificationsDialog(context, ref),
+                      icon: Badge.count(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        count: unreadNotifications,
+                        child: const Icon(Icons.notifications_outlined),
+                      ),
                     ),
-                  ),
+                  ],
+                ),
+                drawer: isCompact ? _buildDrawer(destinations, currentIndex) : null,
+                body: Row(
+                  children: [
+                    if (!isCompact) _buildRail(destinations, currentIndex),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: KeyedSubtree(
+                          key: ValueKey(destinations[currentIndex].id),
+                          child: destinations[currentIndex].builder(),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              if (_showPopup && _currentPopupNotification != null)
+                Positioned(
+                  bottom: 20,
+                  right: 20,
+                  child: NotificationPopup(
+                    notification: _currentPopupNotification!,
+                    onDismiss: () {
+                      setState(() {
+                        _showPopup = false;
+                        _currentPopupNotification = null;
+                      });
+                    },
+                    onTap: () {
+                      setState(() {
+                        _showPopup = false;
+                      });
+                      _openNotificationsDialog(context, ref);
+                    },
+                  ),
+                ),
             ],
           ),
         );
@@ -97,9 +131,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  Widget _buildRail(List<_Destination> destinations) {
+  Widget _buildRail(List<_Destination> destinations, int currentIndex) {
     return NavigationRail(
-      selectedIndex: _selectedIndex,
+      selectedIndex: currentIndex,
       onDestinationSelected: (index) {
         setState(() => _selectedIndex = index);
       },
@@ -115,7 +149,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  Widget _buildDrawer(List<_Destination> destinations) {
+  Widget _buildDrawer(List<_Destination> destinations, int currentIndex) {
     return Drawer(
       child: SafeArea(
         child: Column(
@@ -124,10 +158,11 @@ class _AppShellState extends ConsumerState<AppShell> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Cocool Hotel',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                'Inventory System',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             const Divider(),
@@ -136,7 +171,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 itemCount: destinations.length,
                 itemBuilder: (context, index) {
                   final destination = destinations[index];
-                  final isSelected = index == _selectedIndex;
+                  final isSelected = index == currentIndex;
                   final theme = Theme.of(context);
                   return ListTile(
                     leading: Icon(
@@ -161,70 +196,191 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  List<_Destination> _buildDestinations(AppUser user) {
-    final list = <_Destination>[
+  Future<void> _openNotificationsDialog(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    // Mark all notifications as read when opening the dialog
+    await NotificationsRepository.markAllAsRead();
+    await ref.read(notificationsListProvider.notifier).refresh();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Consumer(
+        builder: (context, ref, child) {
+          final notifications = ref.watch(notificationsListProvider);
+          final entries = notifications.take(20).toList(growable: false);
+          final theme = Theme.of(dialogContext);
+
+          final content = entries.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No notifications yet.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: entries.length,
+                  separatorBuilder: (_, __) => const Divider(height: 12),
+                  itemBuilder: (_, index) {
+                    final note = entries[index];
+                    final isUnread = note['is_read'] != true;
+                    final title =
+                        (note['title']?.toString().trim().isNotEmpty ?? false)
+                            ? note['title'].toString()
+                            : 'Notification';
+                    final subtitle =
+                        (note['message'] ?? note['description'] ?? '').toString();
+
+                    final timestamp =
+                        note['created_at'] ?? note['inserted_at'];
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        isUnread
+                            ? Icons.notifications_active_outlined
+                            : Icons.notifications_none,
+                        color: isUnread ? Colors.orangeAccent : null,
+                      ),
+                      title: Text(title),
+                      subtitle: Text(subtitle),
+                      trailing: timestamp != null
+                          ? Text(
+                              _formatTimestamp(dialogContext, timestamp),
+                              style: theme.textTheme.bodySmall,
+                            )
+                          : null,
+                    );
+                  },
+                );
+
+          return Dialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: 360, maxHeight: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Notifications',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete all notifications',
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: dialogContext,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Delete All Notifications'),
+                                content: const Text('Are you sure you want to delete all notifications? This action cannot be undone.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(true),
+                                    child: const Text('Delete All'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) {
+                              await ref.read(notificationsListProvider.notifier).clearAll();
+                              Navigator.of(dialogContext).pop();
+                            }
+                          },
+                          icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(child: content),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatTimestamp(BuildContext context, dynamic value) {
+    DateTime? timestamp;
+
+    if (value is DateTime) {
+      timestamp = value;
+    } else if (value is String && value.isNotEmpty) {
+      timestamp = DateTime.tryParse(value);
+    }
+
+    if (timestamp == null) return '';
+
+    final localizations = MaterialLocalizations.of(context);
+    final dateLabel = localizations.formatShortDate(timestamp);
+    final timeLabel =
+        localizations.formatTimeOfDay(TimeOfDay.fromDateTime(timestamp));
+    return '$dateLabel • $timeLabel';
+  }
+
+  void _navigateToTab(int index) {
+    setState(() => _selectedIndex = index);
+  }
+
+  List<_Destination> _buildDestinations() {
+    return [
       _Destination(
         id: 'dashboard',
         label: 'Dashboard',
         icon: Icons.dashboard_outlined,
-        builder: (ref, user) => DashboardPage(user: user),
+        builder: () => DashboardPage(onNavigateToTab: _navigateToTab),
       ),
       _Destination(
         id: 'inventory',
         label: 'Inventory',
         icon: Icons.inventory_2_outlined,
-        builder: (_, __) => const InventoryPage(),
-      ),
-      _Destination(
-        id: 'transactions',
-        label: 'Transactions',
-        icon: Icons.compare_arrows_outlined,
-        builder: (_, __) => const TransactionsPage(),
-      ),
-      _Destination(
-        id: 'purchase-orders',
-        label: 'Purchase Orders',
-        icon: Icons.receipt_long_outlined,
-        builder: (_, __) => const PurchaseOrdersPage(),
+        builder: () => const InventoryTransactionsPage(),
       ),
       _Destination(
         id: 'suppliers',
         label: 'Suppliers',
         icon: Icons.storefront_outlined,
-        builder: (_, __) => const SuppliersPage(),
-      ),
-      _Destination(
-        id: 'notifications',
-        label: 'Notifications',
-        icon: Icons.notifications_outlined,
-        builder: (ref, user) => NotificationsPage(user: user),
+        builder: () => const SuppliersPage(),
       ),
       _Destination(
         id: 'reports',
         label: 'Reports',
         icon: Icons.bar_chart_outlined,
-        builder: (_, user) => ReportsPage(user: user),
+        builder: () => const ReportsPage(),
       ),
       _Destination(
         id: 'settings',
         label: 'Settings',
         icon: Icons.settings_outlined,
-        builder: (ref, user) => SettingsPage(user: user),
+        builder: () => const SettingsPage(),
       ),
     ];
-
-    if (user.isAdmin) {
-      list.add(
-        _Destination(
-          id: 'admin',
-          label: 'Admin',
-          icon: Icons.admin_panel_settings_outlined,
-          builder: (_, user) => AdminUsersPage(currentUser: user),
-        ),
-      );
-    }
-
-    return list;
   }
 }
 
@@ -239,81 +395,5 @@ class _Destination {
   final String id;
   final String label;
   final IconData icon;
-  final Widget Function(WidgetRef ref, AppUser user) builder;
-}
-
-class _ProfileMenu extends ConsumerWidget {
-  const _ProfileMenu({required this.user});
-
-  final AppUser user;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final initials = user.fullName.isNotEmpty
-        ? _initialsFromText(user.fullName)
-        : _initialsFromText(user.email);
-
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: PopupMenuButton<_ProfileAction>(
-        tooltip: 'Account',
-        position: PopupMenuPosition.under,
-        onSelected: (action) async {
-          switch (action) {
-            case _ProfileAction.logout:
-              await ref.read(authControllerProvider.notifier).logout();
-              break;
-            case _ProfileAction.profile:
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Profile management coming soon.'),
-                ),
-              );
-              break;
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: _ProfileAction.profile,
-            child: ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: Text(user.fullName),
-              subtitle: Text(user.role.toUpperCase()),
-            ),
-          ),
-          const PopupMenuDivider(),
-          const PopupMenuItem(
-            value: _ProfileAction.logout,
-            child: ListTile(
-              leading: Icon(Icons.logout_outlined),
-              title: Text('Sign out'),
-            ),
-          ),
-        ],
-        child: CircleAvatar(radius: 18, child: Text(initials)),
-      ),
-    );
-  }
-}
-
-enum _ProfileAction { profile, logout }
-
-String _initialsFromText(String text) {
-  final parts = text.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
-  final buffer = StringBuffer();
-  for (final part in parts) {
-    if (buffer.length >= 2) break;
-    final iterator = part.runes.iterator;
-    if (iterator.moveNext()) {
-      buffer.write(String.fromCharCode(iterator.current).toUpperCase());
-    }
-  }
-  if (buffer.isEmpty) {
-    final iterator = text.runes.iterator;
-    if (iterator.moveNext()) {
-      return String.fromCharCode(iterator.current).toUpperCase();
-    }
-    return '?';
-  }
-  return buffer.toString();
+  final Widget Function() builder;
 }
